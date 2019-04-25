@@ -1,0 +1,150 @@
+---
+title: "Final"
+author: "Tiange Yu"
+date: "April 16, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##input datasets
+```{r}
+#readin libraries
+library(haven)
+library(MASS)
+library(nnet)
+
+#readin datasets
+PA_Demo <- read_dta("C:\\Users\\tiang\\Documents\\SP2019\\ADA\\PA_Demo.dta")
+Preg <- read_dta("C:\\Users\\tiang\\Documents\\SP2019\\ADA\\Preg.dta")
+Smoking <- read_dta("C:\\Users\\tiang\\Documents\\SP2019\\ADA\\Smoking.dta")
+UL <- read_dta("C:\\Users\\tiang\\Documents\\SP2019\\ADA\\UL.dta")
+```
+
+##merge
+```{r}
+#merge the datasets baesd on sequence number
+Preg[is.na(Preg)] <- 0 #replace missing with 0 in preg before merge
+total <- merge(PA_Demo, Preg, by="SEQN")
+total <- merge(total, Smoking, by="SEQN")
+total <- merge(total, UL, by="SEQN")
+```
+
+##data cleaning
+```{r}
+#delete pregnant
+nopreg<-total[which(total$RIDEXPRG!=1),]
+#delete missing row
+nomiss <- nopreg[!(nopreg$PAQ665 == "" | is.na(nopreg$PAQ665)),]
+nomiss <- nomiss[!(nomiss$PAQ650 == "" | is.na(nomiss$PAQ650)),]
+nomiss <- nomiss[!(nomiss$PAQ635 == "" | is.na(nomiss$PAQ635)),]
+nomiss <- nomiss[!(nomiss$RIAGENDR == "" | is.na(nomiss$RIAGENDR)),]
+nomiss <- nomiss[!(nomiss$RIDAGEYR == "" | is.na(nomiss$RIDAGEYR)),]
+nomiss <- nomiss[!(nomiss$RIDRETH1 == "" | is.na(nomiss$RIDRETH1)),]
+nomiss <- nomiss[!(nomiss$SMQ020 == "" | is.na(nomiss$SMQ020)),]
+nomiss <- nomiss[!(nomiss$KIQ005 == "" | is.na(nomiss$KIQ005)),]
+#delete "Refused" and "Unknown"
+nomiss <- nomiss[!(nomiss$PAQ650 == "9"),]
+nomiss <- nomiss[!(nomiss$RIDAGEYR >= 80),]
+nomiss <- nomiss[!(nomiss$SMQ020 == "7" | nomiss$SMQ020 == "9"),]
+nomiss <- nomiss[!(nomiss$KIQ005 == "7" | nomiss$KIQ005 == "9"),]
+#recode "no" into 0
+nomiss$PAQ665[nomiss$PAQ665==2]<-0
+nomiss$PAQ650[nomiss$PAQ650==2]<-0
+nomiss$PAQ635[nomiss$PAQ635==2]<-0
+nomiss$SMQ020[nomiss$SMQ020==2]<-0
+#change categorical into factor
+nomiss$KIQ005<-as.factor(as.numeric(nomiss$KIQ005))
+nomiss$RIDRETH1<-as.factor(as.numeric(nomiss$RIDRETH1))
+```
+
+##table1
+```{r}
+#attach to nomiss dataset
+attach(nomiss)
+
+#statistics for categorical variable
+table(PAQ635, KIQ005)
+prop.table(table(PAQ635, KIQ005), 2)
+table(PAQ665, KIQ005)
+prop.table(table(PAQ665, KIQ005), 2)
+table(PAQ650, KIQ005)
+prop.table(table(PAQ650, KIQ005), 2)
+table(RIAGENDR, KIQ005)
+prop.table(table(RIAGENDR, KIQ005), 2)
+table(RIDRETH1, KIQ005)
+prop.table(table(RIDRETH1, KIQ005), 2)
+table(SMQ020, KIQ005)
+prop.table(table(SMQ020, KIQ005), 2)
+
+#statistics for continuous variable
+aggregate(RIDAGEYR, by=list(KIQ005), FUN=mean)
+aggregate(RIDAGEYR, by=list(KIQ005), FUN=sd)
+```
+
+##univariate regression
+```{r}
+#vigorous recreation activity
+VRA <- polr(as.factor(KIQ005) ~ PAQ650, Hess=TRUE)
+summary(VRA)
+#show ORs and 95% CIs
+exp(cbind("Odds ratio" = coef(VRA), confint.default(VRA, level = 0.95)))
+```
+
+##univariate regression
+```{r}
+#moderate recreation activity
+MRA <- polr(as.factor(KIQ005) ~ PAQ665, Hess=TRUE)
+summary(MRA)
+#show ORs and 95% CIs
+exp(cbind("Odds ratio" = coef(MRA), confint.default(MRA, level = 0.95)))
+```
+
+##univariate regression
+```{r}
+#walk/bicycle
+WB <- polr(as.factor(KIQ005) ~ PAQ665, Hess=TRUE)
+summary(WB)
+#show ORs and 95% CIs
+exp(cbind("Odds ratio" = coef(WB), confint.default(WB, level = 0.95)))
+```
+
+##ordinal logistic regression
+```{r}
+#run the ordinal regression
+olr <- polr(as.factor(KIQ005) ~ PAQ650 + PAQ665 + PAQ635 + RIAGENDR + RIDAGEYR + 
+              relevel(as.factor(RIDRETH1),ref=3) + SMQ020, Hess=TRUE)
+
+#show the summary of the model
+summary(olr)
+```
+
+##hypothesis testing
+```{r}
+# store table
+ctable <- coef(summary(olr))
+# calculate and store p values
+p2 <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+# combined table
+ctable <- cbind(ctable, "p value" = p2)
+ctable
+
+# odds ratios and 95%CIs
+exp(cbind("Odds ratio" = coef(olr), confint.default(olr, level = 0.95)))
+```
+
+#run a multinomial regession to double check
+```{r}
+#run the model
+mod <- multinom(as.factor(KIQ005) ~ PAQ650 + PAQ665 + PAQ635 + RIAGENDR + RIDAGEYR + 
+              relevel(as.factor(RIDRETH1),ref=3) + SMQ020)
+summary(mod)
+
+#get coefficient
+exp(coef(mod))
+
+#get ORs and CIs
+exp(confint(mod, level=0.95))
+```
